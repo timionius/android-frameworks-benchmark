@@ -22,8 +22,6 @@ private:
 
     FrameCallback mCallback;
     bool mIsRunning{false};
-    jobject mChoreographer{nullptr};
-    jobject mFrameCallback{nullptr};
 };
 
-#endif //PIXELSAMPLER_CHOREOGRAPHER_CALLBACK_H
+#endif

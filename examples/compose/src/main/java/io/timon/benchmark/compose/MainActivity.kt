@@ -1,6 +1,7 @@
 package io.timon.benchmark.compose
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -17,13 +18,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            PixelSamplerDemo()
+            PixelSamplerDemo(this@MainActivity)
         }
     }
 }
 
 @Composable
-fun PixelSamplerDemo() {
+fun PixelSamplerDemo(activity: MainActivity) {
     var renderTime by remember { mutableStateOf<Long?>(null) }
     var isMeasuring by remember { mutableStateOf(false) }
 
@@ -46,10 +47,16 @@ fun PixelSamplerDemo() {
                 isMeasuring = true
                 renderTime = null
 
-                PixelSampler.start { timeMs: Long ->
-                    renderTime = timeMs
+                try {
+                    PixelSampler.start(activity) { timeMs: Long ->
+                        renderTime = timeMs
+                        isMeasuring = false
+                        Log.i("PixelSampler", "✅ Render completed in $timeMs ms")
+                    }
+                    Log.i("PixelSampler", "start() called successfully")
+                } catch (e: Exception) {
+                    Log.e("PixelSampler", "Crash in start()", e)
                     isMeasuring = false
-                    android.util.Log.i("PixelSampler", "✅ Render completed in $timeMs ms")
                 }
             },
             enabled = !isMeasuring

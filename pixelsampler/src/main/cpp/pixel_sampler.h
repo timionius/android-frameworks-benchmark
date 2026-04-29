@@ -9,7 +9,7 @@ class PixelSampler {
 public:
     static PixelSampler& getInstance();
 
-    void startSampling(JNIEnv* env, jobject javaCallback);
+    void startSampling(JNIEnv* env, jobject activity);
     void stopSampling();
 
     // Called from Java

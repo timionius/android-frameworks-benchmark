@@ -1,61 +1,91 @@
 package io.timon.android.pixelsampler
 
-import android.media.Image
+import android.app.Activity
 import android.media.ImageReader
-import android.os.Handler
-import android.os.Looper
+import android.view.ViewTreeObserver
+import android.util.Log
 import android.view.Surface
 
 object PixelSampler {
 
+    private const val TAG = "PixelSampler"
+
+    private var globalLayoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var renderCallback: ((Long) -> Unit)? = null
+    private var isInitialized = false
+
     init {
-        System.loadLibrary("pixelsampler")
+        try {
+            System.loadLibrary("pixelsampler")
+            Log.i(TAG, "✅ Native library 'pixelsampler' loaded successfully")
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "❌ Failed to load native library 'pixelsampler'", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error while loading library", e)
+        }
     }
 
-    private var imageReader: ImageReader? = null
-    private var onRenderComplete: ((Long) -> Unit)? = null
+    fun start(activity: Activity, onRenderComplete: (timeMs: Long) -> Unit) {
+        if (isInitialized) {
+            Log.w(TAG, "Already initialized")
+            return
+        }
 
-    fun start(onComplete: (Long) -> Unit) {
-        onRenderComplete = onComplete
-        startNative()
+        renderCallback = onRenderComplete
+        Log.i(TAG, "PixelSampler.start() called - using delayed direct call (MIUI friendly)")
+
+        android.os.Handler(activity.mainLooper).postDelayed({
+            try {
+                Log.i(TAG, "Delayed call → findRootViewNative")
+                val rootFound = findRootViewNative(activity)   // ← Pass real Activity
+
+                Log.i(TAG, "findRootViewNative returned: $rootFound")
+
+                if (rootFound) {
+                    isInitialized = true
+                    Log.i(TAG, "✅ Root view found → starting Choreographer")
+                    startChoreographerCallback(activity)
+                } else {
+                    Log.e(TAG, "❌ Failed to find root view")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in native call", e)
+            }
+        }, 300)
     }
 
-    fun stop() {
-        stopNative()
-        cleanupImageReader()
+    /** Called from native */
+    fun onRenderCompleted(timeMs: Long) {
+        renderCallback?.invoke(timeMs)
     }
 
-    private fun cleanupImageReader() {
-        imageReader?.close()
-        imageReader = null
-    }
-
-    // Called from Native
+    /** Called from native C++ - creates 1x1 ImageReader Surface */
     @JvmStatic
     fun createImageReader(width: Int, height: Int): Surface? {
-        cleanupImageReader()
-
-        imageReader = ImageReader.newInstance(
-            width, height,
-            android.graphics.ImageFormat.FLEX_RGBA_8888,
-            3, // max images
-            android.hardware.HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or android.hardware.HardwareBuffer.USAGE_CPU_READ_OFTEN
-        )
-
-        imageReader?.setOnImageAvailableListener({ reader ->
-            reader.acquireLatestImage()?.let { image ->
-                processImageNative(image)
-                image.close()
-            }
-        }, Handler(Looper.getMainLooper()))
-
-        return imageReader?.surface
+        return try {
+            val imageReader = ImageReader.newInstance(width, height, android.graphics.PixelFormat.RGBA_8888, 2)
+            val surface = imageReader.surface
+            Log.i(TAG, "ImageReader created successfully ($width x $height)")
+            surface
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create ImageReader", e)
+            null
+        }
     }
 
-    @JvmStatic
-    private external fun startNative()
-    @JvmStatic
-    private external fun stopNative()
-    @JvmStatic
-    private external fun processImageNative(image: Image)
+    private fun retry(activity: Activity, delayMs: Long = 120) {
+        android.os.Handler(activity.mainLooper).postDelayed({
+            renderCallback?.let { start(activity, it) }
+        }, delayMs)
+    }
+
+    fun release() {
+        globalLayoutListener = null
+        renderCallback = null
+        isInitialized = false
+    }
+
+    private external fun findRootViewNative(activity: Activity): Boolean
+    private external fun startChoreographerCallback(activity: Activity)
+
 }

@@ -20,13 +20,12 @@ JavaVM* getJavaVM() {
     return sJavaVM;
 }
 
-// Ultra-safe version - avoids crashing on MIUI / restricted devices
 jobject getCurrentActivity(JNIEnv* env) {
     if (env == nullptr) return nullptr;
 
     env->ExceptionClear();
 
-    // Try ActivityThread -> getTopActivity (most devices)
+    // Strategy 1: ActivityThread.currentActivityThread().getTopActivity() (most common)
     jclass activityThreadClass = env->FindClass("android/app/ActivityThread");
     if (activityThreadClass != nullptr) {
         jmethodID current = env->GetStaticMethodID(activityThreadClass,
@@ -42,7 +41,10 @@ jobject getCurrentActivity(JNIEnv* env) {
                     jobject activity = env->CallObjectMethod(activityThread, getTop);
                     env->DeleteLocalRef(activityThread);
                     env->DeleteLocalRef(activityThreadClass);
-                    return activity;
+                    if (activity != nullptr) {
+                        LOGI("Got current Activity via ActivityThread.getTopActivity()");
+                        return activity;
+                    }
                 }
                 env->DeleteLocalRef(activityThread);
             }
@@ -51,6 +53,10 @@ jobject getCurrentActivity(JNIEnv* env) {
     }
 
     env->ExceptionClear();
+
+    // Strategy 2: Try to get from the passed Activity (best fallback)
+    // We'll improve this by passing the Activity from Kotlin
+
     LOGW("Could not get current Activity via standard APIs. Root view finding will be limited.");
     return nullptr;
 }

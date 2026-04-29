@@ -1,269 +1,147 @@
-// pixel_sampler.cpp
 #include "pixel_sampler.h"
-#include "choreographer_callback.h"
-#include "view_locator.h"
 #include "jni_helpers.h"
+#include "choreographer_callback.h"
 
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
 #include <media/NdkImageReader.h>
 #include <media/NdkImage.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
 
-static AImageReader* gImageReader = nullptr;
-static ANativeWindow* gNativeWindow = nullptr;
+#include <atomic>
+#include <vector>
+#include <cstring>
 
-PixelSampler& PixelSampler::getInstance() {
-    static PixelSampler instance;
-    return instance;
-}
+namespace pixelsampler {
 
-void PixelSampler::startSampling(JNIEnv* env, jobject activity) {
-    if (mIsActive.load()) {
-        LOGW("Sampling already active");
-        return;
-    }
+    constexpr int SAMPLE_W = 100;
+    constexpr int SAMPLE_H = 100;
+    constexpr int SAMPLE_BYTES = SAMPLE_W * SAMPLE_H * 4;
 
-    LOGI("=== PixelSampler::startSampling() started with Activity: %p ===", activity);
+    static AImageReader* g_imageReader = nullptr;
+    static ANativeWindow* g_nativeWindow = nullptr;
+    static AImage* g_latestImage = nullptr;
 
-    // Root View - now using passed Activity
-    if (mRootView == nullptr) {
-        LOGI("Finding root view using passed Activity...");
-        jobject root = ViewLocator::getInstance().findRootViewWithActivity(env, activity);
-        if (root != nullptr) {
-            mRootView = env->NewGlobalRef(root);
-            LOGI("✅ Root view acquired and cached");
-        } else {
-            LOGE("❌ Failed to find root view");
-            notifyComplete(-1);
+    static std::vector<uint8_t> g_prevPixels(SAMPLE_BYTES, 0);
+    static std::atomic<int> g_stableCount{0};
+    static std::atomic<bool> g_isStable{false};
+    static int g_frameCount = 0;
+
+    void nativeSetSurface(JNIEnv* env, jobject /*thiz*/, jobject surface) {
+
+        if (g_nativeWindow) {
+            ANativeWindow_release(g_nativeWindow);
+        }
+        if (g_nativeWindow) ANativeWindow_release(g_nativeWindow);
+
+        g_nativeWindow = ANativeWindow_fromSurface(env, surface);
+        if (!g_nativeWindow) {
+            LOGE("Failed to create ANativeWindow from Surface");
             return;
         }
-    }
 
-    // Reset state
-    mIsActive.store(true);
-    mFrameCount.store(0);
-    mConsecutiveUnchangedCount.store(0);
-    mLastHash.store(0);
-    mStartTimeNs = 0;
-    mLastSampleTimeNs = 0;
+        media_status_t status = AImageReader_new(
+                SAMPLE_W, SAMPLE_H, AIMAGE_FORMAT_RGBA_8888, 6, &g_imageReader);
 
-    // Create ImageReader
-    LOGI("Creating 1x1 ImageReader...");
-    jobject surface = createImageReader(env, 1, 1);
-    if (surface != nullptr) {
-        gNativeWindow = ANativeWindow_fromSurface(env, surface);
-        env->DeleteLocalRef(surface);
-        LOGI("✅ ImageReader created");
-    } else {
-        LOGE("❌ Failed to create ImageReader");
-        notifyComplete(-2);
-        return;
-    }
-
-    // Start Choreographer
-    LOGI("Starting ChoreographerCallback...");
-    ChoreographerCallback::getInstance().start([this](jlong frameTimeNanos) {
-        this->onFrameCallback(frameTimeNanos);
-    });
-
-    LOGI("✅ PixelSampler fully started!");
-}
-
-void PixelSampler::stopSampling() {
-    if (!mIsActive.load()) return;
-
-    mIsActive.store(false);
-    ChoreographerCallback::getInstance().stop();
-
-    JNIEnv* env = getJNIEnv();
-    if (env) {
-        if (mJavaCallback) {
-            env->DeleteGlobalRef(mJavaCallback);
-            mJavaCallback = nullptr;
-        }
-        if (mRootView) {
-            env->DeleteGlobalRef(mRootView);
-            mRootView = nullptr;
+        if (status == AMEDIA_OK && g_imageReader) {
+            LOGI("✅ Native AImageReader (%dx%d) created successfully", SAMPLE_W, SAMPLE_H);
+        } else {
+            LOGE("Failed to create AImageReader");
         }
     }
 
-    // Cleanup ImageReader
-    if (gNativeWindow) {
-        ANativeWindow_release(gNativeWindow);
-        gNativeWindow = nullptr;
-    }
-    if (gImageReader) {
-        AImageReader_delete(gImageReader);
-        gImageReader = nullptr;
-    }
+    // ===================================================================
+    // Choreographer Frame Callback
+    // ===================================================================
+    void onFrameCallback(int64_t /*frameTimeNanos*/) {
+        if (g_isStable.load() || !g_imageReader) return;
 
-    LOGI("PixelSampler stopped");
-}
+        g_frameCount++;
 
-void PixelSampler::onFrameCallback(jlong frameTimeNanos) {
-    if (!mIsActive.load()) return;
+        AImage* image = nullptr;
+        media_status_t status = AImageReader_acquireLatestImage(g_imageReader, &image);
 
-    mFrameCount.fetch_add(1);
-
-    LOGI("onFrameCallback #%d", mFrameCount.load());
-
-    if (mFrameCount.load() % 5 != 0) {
-        return;
-    }
-
-    if (mLastSampleTimeNs > 0) {
-        jlong elapsed = frameTimeNanos - mLastSampleTimeNs;
-        if (elapsed < SAMPLE_INTERVAL_NS) return;
-    }
-
-    mLastSampleTimeNs = frameTimeNanos;
-
-    jlong hash = captureCenterPixel();
-    processPixel(hash);
-}
-
-jlong PixelSampler::captureCenterPixel() {
-    if (!gImageReader) return 0;
-
-    AImage* image = nullptr;
-    if (AImageReader_acquireLatestImage(gImageReader, &image) != AMEDIA_OK || image == nullptr) {
-        return 0;
-    }
-
-    AHardwareBuffer* buffer = nullptr;
-    AImage_getHardwareBuffer(image, &buffer);
-
-    jlong pixel = 0;
-    if (buffer) {
-        void* data = nullptr;
-        AHardwareBuffer_lock(buffer, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, nullptr, &data);
-        if (data) {
-            pixel = *reinterpret_cast<uint32_t*>(data) & 0xFFFFFFFFULL;
-            AHardwareBuffer_unlock(buffer, nullptr);
+        if (status != AMEDIA_OK || !image) {
+            if (g_frameCount % 30 == 0) {
+                LOGD("No new image available (frame %d)", g_frameCount);
+            }
+            return;
         }
-    }
 
-    AImage_delete(image);
-    return pixel;
-}
+        uint8_t* data = nullptr;
+        int32_t len = 0;
+        int32_t pixelStride = 0;
 
-void PixelSampler::processPixel(jlong hash) {
-    if (hash == 0) return;
+        AImage_getPlaneData(image, 0, &data, &len);
+        AImage_getPlanePixelStride(image, 0, &pixelStride);
 
-    if (mStartTimeNs == 0) {
-        mStartTimeNs = mLastSampleTimeNs;
-        LOGI("First content detected");
-    }
+        if (data && len >= SAMPLE_BYTES && pixelStride == 4) {
+            if (std::memcmp(data, g_prevPixels.data(), SAMPLE_BYTES) == 0) {
+                g_stableCount.fetch_add(1);
+            } else {
+                std::memcpy(g_prevPixels.data(), data, SAMPLE_BYTES);
+                g_stableCount.store(1);
 
-    if (hash == mLastHash.load()) {
-        int count = mConsecutiveUnchangedCount.fetch_add(1) + 1;
+                // Debug: print first 8 bytes to see if content is changing
+                if (g_frameCount % 20 == 0) {
+                    LOGI("Frame %d - Pixel data changed (first bytes: %02X %02X %02X %02X ...)",
+                            g_frameCount, data[0], data[1], data[2], data[3]);
+                }
+            }
 
-        if (count >= REQUIRED_STABLE_FRAMES) {
-            jlong totalTimeMs = (mLastSampleTimeNs - mStartTimeNs) / 1'000'000;
-            LOGI("Render complete after %d frames (~%lld ms)", mFrameCount.load(), (long long)totalTimeMs);
-            notifyComplete(totalTimeMs);
-            stopSampling();
+            if (g_stableCount.load() >= 6 && !g_isStable.load()) {
+                g_isStable.store(true);
+                LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
+            }
         }
-    } else {
-        mConsecutiveUnchangedCount.store(0);
-        mLastHash.store(hash);
-    }
-}
 
-void PixelSampler::notifyComplete(jlong totalTimeMs) {
-    JNIEnv* env = getJNIEnv();
-    if (env == nullptr) return;
-
-    jclass samplerClass = env->FindClass("io/timon/android/pixelsampler/PixelSampler");
-    if (samplerClass == nullptr) {
-        env->ExceptionClear();
-        LOGE("Failed to find PixelSampler class");
-        return;
+        AImage_delete(image);
     }
 
-    // Get the singleton INSTANCE of the Kotlin object
-    jfieldID instanceField = env->GetStaticFieldID(samplerClass,
-            "INSTANCE", "Lio/timon/android/pixelsampler/PixelSampler;");
+    // ===================================================================
+    // Release
+    // ===================================================================
+    void releasePixelSampler() {
+        if (g_latestImage) AImage_delete(g_latestImage);
+        if (g_imageReader) AImageReader_delete(g_imageReader);
+        if (g_nativeWindow) ANativeWindow_release(g_nativeWindow);
 
-    if (instanceField == nullptr) {
-        env->DeleteLocalRef(samplerClass);
-        LOGE("Failed to find INSTANCE field");
-        return;
+        g_imageReader = nullptr;
+        g_nativeWindow = nullptr;
+        g_latestImage = nullptr;
+
+        g_prevPixels.assign(SAMPLE_BYTES, 0);
+        g_stableCount.store(0);
+        g_isStable.store(false);
+        g_frameCount = 0;
+
+        LOGI("Native PixelSampler released");
     }
 
-    jobject samplerInstance = env->GetStaticObjectField(samplerClass, instanceField);
-    if (samplerInstance == nullptr) {
-        env->DeleteLocalRef(samplerClass);
-        LOGE("PixelSampler.INSTANCE is null");
-        return;
-    }
+} // namespace pixelsampler
 
-    // Now call the instance method
-    jmethodID onCompleted = env->GetMethodID(samplerClass,
-            "onRenderCompleted", "(J)V");
+// ==================== JNI Bridge (Global extern "C") ====================
 
-    if (onCompleted != nullptr) {
-        env->CallVoidMethod(samplerInstance, onCompleted, totalTimeMs);
-        LOGI("Successfully notified Kotlin: render completed in %lld ms", totalTimeMs);
-    } else {
-        LOGE("Could not find onRenderCompleted method");
-    }
-
-    env->DeleteLocalRef(samplerInstance);
-    env->DeleteLocalRef(samplerClass);
-}
-
-jobject PixelSampler::createImageReader(JNIEnv* env, jint width, jint height) {
-    jclass clazz = env->FindClass("io/timon/android/pixelsampler/PixelSampler");
-    if (clazz == nullptr) {
-        env->ExceptionClear();
-        LOGE("Cannot find PixelSampler class");
-        return nullptr;
-    }
-
-    jmethodID method = env->GetStaticMethodID(clazz, "createImageReader", "(II)Landroid/view/Surface;");
-    if (method == nullptr) {
-        env->DeleteLocalRef(clazz);
-        env->ExceptionClear();
-        LOGE("Cannot find createImageReader method");
-        return nullptr;
-    }
-
-    jobject surface = env->CallStaticObjectMethod(clazz, method, width, height);
-    env->DeleteLocalRef(clazz);
-    return surface;
-}
-
-// ================== JNI EXPORTS ==================
 extern "C" {
 
-JNIEXPORT jboolean JNICALL
-Java_io_timon_android_pixelsampler_PixelSampler_findRootViewNative(
-        JNIEnv* env, jobject thiz, jobject activity) {
-
-    LOGI("findRootViewNative() called with Activity: %p", activity);
-
-    if (activity == nullptr) {
-        LOGE("Activity passed from Java is null");
-        return JNI_FALSE;
-    }
-
-    // Delegate to our ViewLocator
-    jobject root = ViewLocator::getInstance().findRootViewWithActivity(env, activity);
-
-    bool success = (root != nullptr);
-
-    LOGI("findRootViewNative result: %s", success ? "SUCCESS" : "FAILED");
-    return success ? JNI_TRUE : JNI_FALSE;
+// Surface
+JNIEXPORT void JNICALL
+Java_io_timon_android_pixelsampler_PixelSampler_nativeSetSurface(
+        JNIEnv* env, jobject thiz, jobject surface) {
+    pixelsampler::nativeSetSurface(env, thiz, surface);
 }
 
+// Choreographer
 JNIEXPORT void JNICALL
 Java_io_timon_android_pixelsampler_PixelSampler_startChoreographerCallback(
         JNIEnv* env, jobject thiz, jobject activity) {
-
-    LOGI("startChoreographerCallback() called with Activity: %p", activity);
-
-    PixelSampler::getInstance().startSampling(env, activity);
+    choreographer::start(env, activity);
 }
 
-} // extern "C"
+JNIEXPORT void JNICALL
+Java_io_timon_android_pixelsampler_PixelSampler_stopChoreographerNative(
+        JNIEnv* env, jobject thiz) {
+    choreographer::stop();
+    pixelsampler::releasePixelSampler();
+}
+
+}

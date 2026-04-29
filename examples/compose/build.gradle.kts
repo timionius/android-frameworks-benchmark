@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "io.timon.benchmark.compose"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.timon.benchmark.compose"

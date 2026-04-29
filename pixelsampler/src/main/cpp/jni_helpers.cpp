@@ -1,4 +1,3 @@
-// jni_helpers.cpp
 #include "jni_helpers.h"
 
 static JavaVM* sJavaVM = nullptr;

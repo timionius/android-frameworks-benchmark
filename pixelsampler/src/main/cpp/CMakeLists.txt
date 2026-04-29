@@ -21,7 +21,7 @@ target_include_directories(pixelsampler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Android libraries
 find_library(log-lib log)
 find_library(android-lib android)
-find_library(mediandk-lib mediandk)   # ← This was missing!
+find_library(mediandk-lib mediandk)
 
 target_link_libraries(pixelsampler
         PRIVATE

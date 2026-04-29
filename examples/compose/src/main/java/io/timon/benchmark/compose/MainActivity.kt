@@ -1,76 +1,78 @@
 package io.timon.benchmark.compose
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import io.timon.android.pixelsampler.PixelSampler  // Correct import
+import androidx.compose.ui.unit.sp
+import io.timon.android.pixelsampler.PixelSampler
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Start sampler immediately (no callback needed anymore)
+        PixelSampler.register(this)
+        PixelSampler.start(this)
+
         setContent {
-            PixelSamplerDemo(this@MainActivity)
+            SampleApp()
         }
+    }
+
+    override fun onDestroy() {
+        PixelSampler.release()
+        super.onDestroy()
     }
 }
 
 @Composable
-fun PixelSamplerDemo(activity: MainActivity) {
-    var renderTime by remember { mutableStateOf<Long?>(null) }
-    var isMeasuring by remember { mutableStateOf(false) }
+fun SampleApp() {
+    // 1-second basic animation that starts RIGHT AFTER LAUNCH
+    var targetScale by remember { mutableStateOf(0.5f) }
 
-    Column(
+    LaunchedEffect(Unit) {
+        targetScale = 1.8f   // triggers animation instantly
+    }
+
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = tween(
+            durationMillis = 1000,      // exactly 1 second
+            easing = LinearEasing
+        )
+    )
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(Color(0xFF1A1A1A)),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "PixelSampler Benchmark",
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        Spacer(modifier = Modifier.height(48.dp))
-
-        Button(
-            onClick = {
-                isMeasuring = true
-                renderTime = null
-
-                try {
-                    PixelSampler.start(activity) { timeMs: Long ->
-                        renderTime = timeMs
-                        isMeasuring = false
-                        Log.i("PixelSampler", "✅ Render completed in $timeMs ms")
-                    }
-                    Log.i("PixelSampler", "start() called successfully")
-                } catch (e: Exception) {
-                    Log.e("PixelSampler", "Crash in start()", e)
-                    isMeasuring = false
-                }
-            },
-            enabled = !isMeasuring
+        Box(
+            modifier = Modifier
+                .size(180.dp)
+                .scale(scale)
+                .background(Color(0xFF00BFA5), CircleShape)
         ) {
-            Text(if (isMeasuring) "Measuring..." else "Start Render Time Measurement")
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        renderTime?.let {
             Text(
-                text = "Render completed in ${it} ms",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary
+                text = "ANIMATING",
+                color = Color.White,
+                fontSize = 18.sp,
+                modifier = Modifier.align(Alignment.Center)
             )
         }
     }

@@ -11,8 +11,8 @@ junit = "4.13.2"
 junitVersion = "1.1.5"
 kotlin = "2.3.21"
 lifecycle = "2.7.0"
-material = "1.10.0"
-minSdk = "24"
+material = "1.13.0"
+minSdk = "29"
 targetSdk = "34"
 
 [libraries]
@@ -36,6 +36,7 @@ material = { group = "com.google.android.material", name = "material", version.r
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
 maven-publish = { id = "maven-publish", version = "unspecified" }

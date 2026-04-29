@@ -1,28 +1,35 @@
 # Android Frameworks Benchmark
 
-A high-precision performance monitoring SDK for Android that measures first-frame render time across different UI frameworks (Jetpack Compose, Flutter, React Native, and XML Views) using pixel sampling at 60fps.
+**High-precision render time measurement SDK** for Android using NDK pixel sampling.
+
+Measures the real visual render completion time across **Jetpack Compose, Flutter, React Native, and traditional XML Views**.
+
+---
 
 ## 🎯 Purpose
 
-Compare the actual render performance of different Android UI frameworks by measuring the time from window creation to visual stability using a non-intrusive pixel-sampling technique.
-
-## 📊 Supported Frameworks
-
-| Framework | Detection Method | Sampling Technique |
-|-----------|-----------------|-------------------|
-| **Jetpack Compose** | ComposeView detection | 1x1 pixel sampling |
-| **Flutter** | FlutterView detection | 1x1 pixel sampling |
-| **React Native** | ReactRootView detection | 1x1 pixel sampling |
-| **XML Views** | DecorView detection | 1x1 pixel sampling |
+This SDK helps developers and framework authors objectively compare **first meaningful paint** and **visual stability** time across different UI frameworks by sampling the center pixel of the root view until the frame stabilizes.
 
 ## ✨ Key Features
 
-- **Low overhead** - Samples every 5th frame (≈83ms) using 1x1 pixel capture
-- **60fps sampling** - Time-based sampling consistent across all devices
-- **Framework detection** - Automatically identifies the UI framework in use
-- **NDK implementation** - High-performance native code for pixel capture
-- **4-frame stability** - Waits for 4 consecutive unchanged frames before completion
-- **Cross-framework** - Works with any Android UI framework
+- **Ultra-low overhead** — Samples only every 5th frame (~12 FPS) to minimize impact
+- **Zero-copy pixel capture** — Uses `ImageReader` + `AHardwareBuffer` (modern, fast)
+- **Automatic framework detection** — Detects Compose, Flutter, React Native, or XML
+- **Frame stability detection** — Requires 4 consecutive identical frames before reporting
+- **Choreographer-driven** — Perfectly aligned with vsync
+- **Pure NDK core** — High-performance C++ implementation
+- **Kotlin-first API** — Simple callback-based usage
+
+## 📊 Supported Frameworks
+
+| Framework         | Detection                     | Status     |
+|-------------------|-------------------------------|------------|
+| Jetpack Compose   | `AndroidComposeView`          | ✅ Full    |
+| Flutter           | `FlutterView` / Impeller      | ✅ Full    |
+| React Native      | `ReactRootView`               | ✅ Full    |
+| Traditional Views | `DecorView`                   | ✅ Full    |
+
+---
 
 ## 📦 Installation
 

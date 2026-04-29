@@ -1,15 +1,54 @@
+# Android / Gradle
 *.iml
 .gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+gradle-app.setting
 local.properties
+
+# Build outputs
+build/
+captures/
+.cxx/
+.externalNativeBuild/
+**/build/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+out/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*~
+
+# NDK / CMake specific
+**/obj/
+**/libs/
+*.so
+*.a
+
+# Profiling / debug
+*.hprof
+*.jprof
+
+# Gradle cache (optional but useful)
+.gradle/caches/
+.gradle/daemon/
+.gradle/wrapper/
+
+# Kotlin / Compose
+.kotlin/
+.konan/

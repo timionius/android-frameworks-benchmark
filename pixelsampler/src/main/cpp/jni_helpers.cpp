@@ -1,3 +1,4 @@
+// jni_helpers.cpp
 #include "jni_helpers.h"
 
 static JavaVM* sJavaVM = nullptr;
@@ -12,7 +13,6 @@ JNIEnv* getJNIEnv() {
         result = sJavaVM->AttachCurrentThread(&env, nullptr);
         if (result != JNI_OK) return nullptr;
     }
-
     return env;
 }
 
@@ -20,35 +20,43 @@ JavaVM* getJavaVM() {
     return sJavaVM;
 }
 
+// Ultra-safe version - avoids crashing on MIUI / restricted devices
 jobject getCurrentActivity(JNIEnv* env) {
-    // Get ActivityThread
+    if (env == nullptr) return nullptr;
+
+    env->ExceptionClear();
+
+    // Try ActivityThread -> getTopActivity (most devices)
     jclass activityThreadClass = env->FindClass("android/app/ActivityThread");
-    jmethodID currentActivityThread = env->GetStaticMethodID(
-            activityThreadClass,
-            "currentActivityThread",
-            "()Landroid/app/ActivityThread;"
-    );
-    jobject activityThread = env->CallStaticObjectMethod(activityThreadClass, currentActivityThread);
+    if (activityThreadClass != nullptr) {
+        jmethodID current = env->GetStaticMethodID(activityThreadClass,
+                "currentActivityThread", "()Landroid/app/ActivityThread;");
 
-    // Get activities list
-    jmethodID getActivities = env->GetMethodID(
-            activityThreadClass,
-            "getActivities",
-            "()Ljava/util/List;"
-    );
-    jobject activities = env->CallObjectMethod(activityThread, getActivities);
+        if (current != nullptr) {
+            jobject activityThread = env->CallStaticObjectMethod(activityThreadClass, current);
+            if (activityThread != nullptr) {
+                jmethodID getTop = env->GetMethodID(env->GetObjectClass(activityThread),
+                        "getTopActivity", "()Landroid/app/Activity;");
 
-    // Simplified - get first activity
-    // Full implementation would iterate through the list
+                if (getTop != nullptr) {
+                    jobject activity = env->CallObjectMethod(activityThread, getTop);
+                    env->DeleteLocalRef(activityThread);
+                    env->DeleteLocalRef(activityThreadClass);
+                    return activity;
+                }
+                env->DeleteLocalRef(activityThread);
+            }
+        }
+        env->DeleteLocalRef(activityThreadClass);
+    }
 
-    env->DeleteLocalRef(activityThread);
-    if (activities != nullptr) env->DeleteLocalRef(activities);
-
-    return nullptr; // Simplified for now
+    env->ExceptionClear();
+    LOGW("Could not get current Activity via standard APIs. Root view finding will be limited.");
+    return nullptr;
 }
 
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     sJavaVM = vm;
-    LOGI("JNI_OnLoad called - Native library loaded");
+    LOGI("JNI_OnLoad called - PixelSampler native library loaded successfully");
     return JNI_VERSION_1_6;
 }

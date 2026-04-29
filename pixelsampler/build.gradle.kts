@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
-//    id("maven-publish")
+    // id("maven-publish")   // uncomment when needed
 }
 
 android {
@@ -15,9 +15,16 @@ android {
 
         externalNativeBuild {
             cmake {
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DANDROID_ARM_NEON=TRUE"
+                )
                 cppFlags += "-std=c++17"
-                arguments += "-DANDROID_STL=c++_shared"
             }
+        }
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
@@ -28,12 +35,27 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DCMAKE_BUILD_TYPE=Release"
+                }
+            }
+        }
+
+        debug {
+            externalNativeBuild {
+                cmake {
+                    arguments += "-DCMAKE_BUILD_TYPE=Debug"
+                }
+            }
         }
     }
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -42,9 +64,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-//    kotlinOptions {
-//        jvmTarget = "17"
-//    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
@@ -55,12 +79,12 @@ dependencies {
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
 }
-
+// ====================== Publishing (optional) ======================
 //publishing {
 //    publications {
 //        register<MavenPublication>("release") {
 //            groupId = "io.timon.android"
-//            artifactId = "pixelsamplersdk"
+//            artifactId = "pixelsampler"
 //            version = "1.0.0"
 //
 //            afterEvaluate {

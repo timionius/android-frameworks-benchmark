@@ -1,8 +1,13 @@
 package io.timon.benchmark.compose
 
+import android.content.Context
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -17,7 +22,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import io.timon.android.pixelsampler.PixelSampler
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -42,9 +50,11 @@ class MainActivity : ComponentActivity() {
 fun SampleApp() {
     // 1-second basic animation that starts RIGHT AFTER LAUNCH
     var targetScale by remember { mutableStateOf(0.5f) }
+    var targetColor by remember { mutableStateOf(Color.Red) }
 
     LaunchedEffect(Unit) {
         targetScale = 1.8f   // triggers animation instantly
+        targetColor = Color.Blue  // color animation
     }
 
     val scale by animateFloatAsState(
@@ -55,10 +65,20 @@ fun SampleApp() {
         )
     )
 
+    // Color animation
+    val backgroundColor by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(
+            durationMillis = 1000,
+            easing = LinearEasing
+        ),
+        label = "color"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1A1A)),
+            .background(backgroundColor),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -67,12 +87,17 @@ fun SampleApp() {
                 .scale(scale)
                 .background(Color(0xFF00BFA5), CircleShape)
         ) {
-            Text(
-                text = "ANIMATING",
-                color = Color.White,
-                fontSize = 18.sp,
-                modifier = Modifier.align(Alignment.Center)
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Text(
+                    text = "ANIMATING",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                )
+            }
         }
     }
 }

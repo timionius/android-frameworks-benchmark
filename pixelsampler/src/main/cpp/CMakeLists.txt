@@ -12,7 +12,6 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 add_library(pixelsampler SHARED
         pixel_sampler.cpp
         choreographer_callback.cpp
-        view_locator.cpp
         jni_helpers.cpp
 )
 
@@ -22,12 +21,14 @@ target_include_directories(pixelsampler PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 find_library(log-lib log)
 find_library(android-lib android)
 find_library(mediandk-lib mediandk)
+find_library(jnigraphics-lib jnigraphics)
 
 target_link_libraries(pixelsampler
         PRIVATE
         ${log-lib}
         ${android-lib}
         ${mediandk-lib}
+        ${jnigraphics-lib}
 )
 
 target_compile_options(pixelsampler PRIVATE

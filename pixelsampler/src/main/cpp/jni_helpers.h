@@ -13,10 +13,14 @@
 
 // JNI helper functions
 JNIEnv* getJNIEnv();
-JavaVM* getJavaVM();
-jobject getCurrentActivity(JNIEnv* env);
+
+// Callback notification
+void notifyStableDetected();
+
+// Optional: Set instance manually if can't get from static method
+void setPixelSamplerInstance(JNIEnv* env, jobject instance);
 
 // JNI OnLoad declaration
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved);
 
-#endif //PIXELSAMPLER_JNI_HELPERS_H
+#endif

@@ -25,7 +25,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // Start sampler immediately (no callback needed anymore)
-        PixelSampler.register(this)
         PixelSampler.start(this)
 
         setContent {

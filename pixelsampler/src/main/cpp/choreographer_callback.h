@@ -3,7 +3,7 @@
 
 namespace choreographer {
 
-    void start(JNIEnv* env, jobject activity);
+    void start();
     void stop();
 
 }

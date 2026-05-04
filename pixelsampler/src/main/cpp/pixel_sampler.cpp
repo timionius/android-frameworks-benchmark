@@ -65,107 +65,6 @@ namespace pixelsampler {
         }
     }
 
-// ===================================================================
-// ImageReader Callback - Called when a new frame is available
-// ===================================================================
-    static void onImageAvailable(void* context, AImageReader* reader) {
-        g_imageCallbackCount++;
-
-        LOGI("🔥🔥🔥 IMAGE AVAILABLE CALLBACK #%d TRIGGERED! 🔥🔥🔥", g_imageCallbackCount);
-
-        if (!g_isCapturing) {
-            LOGI("  Not capturing (g_isCapturing = false), skipping");
-            return;
-        }
-
-        if (g_isStable.load()) {
-            LOGI("  Already stable (g_isStable = true), skipping");
-            return;
-        }
-
-        if (!g_imageReader) {
-            LOGE("  g_imageReader is NULL!");
-            return;
-        }
-
-        AImage* image = nullptr;
-        media_status_t status = AImageReader_acquireLatestImage(reader, &image);
-
-        LOGI("  AImageReader_acquireLatestImage status: %d", status);
-
-        if (status != AMEDIA_OK) {
-            if (g_imageCallbackCount % 10 == 0) {
-                LOGW("  acquireLatestImage failed with status: %d", status);
-            }
-            return;
-        }
-
-        if (!image) {
-            LOGE("  acquireLatestImage returned success but image is NULL!");
-            return;
-        }
-
-        LOGI("✅✅✅ SUCCESS: IMAGE ACQUIRED at callback #%d! ✅✅✅", g_imageCallbackCount);
-
-        g_frameCount++;
-
-        // Get pixel data
-        uint8_t* data = nullptr;
-        int32_t dataLength = 0;
-        int32_t pixelStride = 0;
-        int32_t rowStride = 0;
-
-        AImage_getPlaneData(image, 0, &data, &dataLength);
-        AImage_getPlanePixelStride(image, 0, &pixelStride);
-        AImage_getPlaneRowStride(image, 0, &rowStride);
-
-        LOGI("  Image info: data=%p, len=%d, pixelStride=%d, rowStride=%d",
-                data, dataLength, pixelStride, rowStride);
-
-        if (data && dataLength >= CAPTURE_WIDTH * CAPTURE_HEIGHT * 4 && pixelStride == 4) {
-            // Calculate non-black pixels
-            int nonBlackCount = 0;
-            for (int i = 0; i < CAPTURE_WIDTH * CAPTURE_HEIGHT * 4; i += 4) {
-                if (data[i] > 0 || data[i+1] > 0 || data[i+2] > 0) {
-                    nonBlackCount++;
-                }
-            }
-
-            int percentNonBlack = (nonBlackCount * 100) / (CAPTURE_WIDTH * CAPTURE_HEIGHT);
-
-            LOGI("  Frame %d - Non-black: %d/%d (%d%%), Avg RGB: (%d,%d,%d)",
-                    g_frameCount, nonBlackCount, CAPTURE_WIDTH * CAPTURE_HEIGHT, percentNonBlack,
-                    (int)data[0], (int)data[1], (int)data[2]);
-
-            // Check stability
-            bool isStable = (std::memcmp(data, g_prevPixels.data(), dataLength) == 0);
-
-            if (isStable) {
-                int stableCount = g_stableCount.fetch_add(1) + 1;
-                LOGI("  Stable count: %d / %d", stableCount, STABILITY_THRESHOLD);
-
-                if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
-                    g_isStable.store(true);
-                    LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
-                    LOGI("   Final non-black: %d%%", percentNonBlack);
-                    auto now = std::chrono::steady_clock::now();
-                    double nowMs = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
-                    notifyStableDetected(nowMs);
-                }
-            } else {
-                std::memcpy(g_prevPixels.data(), data, dataLength);
-                g_stableCount.store(1);
-                LOGI("  Frame changed - resetting stable count");
-            }
-        } else {
-            LOGW("  Invalid pixel data: data=%p, len=%d, expected=%d, pixelStride=%d",
-                    data, dataLength, CAPTURE_WIDTH * CAPTURE_HEIGHT * 4, pixelStride);
-        }
-
-        AImage_delete(image);
-        LOGI("  Image deleted");
-    }
-
     // ===================================================================
     // Create VirtualDisplay using stored MediaProjection
     // ===================================================================
@@ -182,12 +81,6 @@ namespace pixelsampler {
         }
 
         LOGI("✅ AImageReader created: %dx%d", CAPTURE_WIDTH, CAPTURE_HEIGHT);
-
-//        AImageReader_ImageListener listener;
-//        listener.context = nullptr;
-//        listener.onImageAvailable = onImageAvailable;
-//        AImageReader_setImageListener(g_imageReader, &listener);
-//        LOGI("✅ ImageReader callback SET - onImageAvailable = %p", listener.onImageAvailable);
 
         // Get the ANativeWindow from AImageReader
         ANativeWindow* nativeWindow = nullptr;

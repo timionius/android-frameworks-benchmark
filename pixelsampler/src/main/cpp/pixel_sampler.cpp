@@ -12,7 +12,6 @@
 
 namespace pixelsampler {
 
-    constexpr int STABILITY_THRESHOLD = 2;
     constexpr int CAPTURE_WIDTH = 100;
     constexpr int CAPTURE_HEIGHT = 100;
     constexpr int CAPTURE_DPI = 160;
@@ -21,14 +20,13 @@ namespace pixelsampler {
     static AImageReader* g_imageReader = nullptr;
     static jobject g_virtualDisplay = nullptr;
 
-    // Add this static counter at the top of the file
-    static int g_imageCallbackCount = 0;
-
     // Frame tracking
     static std::vector<uint8_t> g_prevPixels;
     static std::atomic<int> g_stableCount{0};
     static std::atomic<bool> g_isStable{false};
+    static int g_emptyBufferTicks = 0;
     static int g_frameCount = 0;
+    static double g_lastAnimation = 0;
     static bool g_isCapturing = false;
 
     // Forward declarations
@@ -53,6 +51,8 @@ namespace pixelsampler {
         g_stableCount.store(0);
         g_isStable.store(false);
         g_frameCount = 0;
+        g_emptyBufferTicks = 0;
+        g_lastAnimation = 0;
 
         // Create VirtualDisplay and start capture
         createVirtualDisplay(env, mediaProjection);
@@ -143,41 +143,21 @@ namespace pixelsampler {
         AImage* image = nullptr;
         media_status_t status = AImageReader_acquireLatestImage(g_imageReader, &image);
 
-        if (status != AMEDIA_OK || !image) {
-            LOGI("✅ pixel_sampler status = %d", status);
-            return;
+        if (status == AMEDIA_OK && image != nullptr) {
+            LOGI("✅ pixel_sampler scene got changed");
+            g_lastAnimation = getElapsedRealtimeMs();
+            g_emptyBufferTicks = 0;
         }
 
-        // Get pixel data
-        uint8_t* data = nullptr;
-        int32_t dataLength = 0;
-        AImage_getPlaneData(image, 0, &data, &dataLength);
-
-        if (data && dataLength >= CAPTURE_WIDTH * CAPTURE_HEIGHT * 4) {
-            // Check stability by comparing with previous frame
-            bool isStable = (std::memcmp(data, g_prevPixels.data(), dataLength) == 0);
-
-            if (isStable) {
-                int stableCount = g_stableCount.fetch_add(1) + 1;
-
-                if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
-                    g_isStable.store(true);
-                    LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
-                    double nowMs = getElapsedRealtimeMs();
-                    notifyStableDetected(nowMs);
-                }
-            } else {
-                // Frame changed - reset
-                std::memcpy(g_prevPixels.data(), data, dataLength);
-                g_stableCount.store(1);
-
-                if (g_frameCount % 30 == 0) {
-                    LOGI("Frame %d - Content changing", g_frameCount);
-                }
-            }
-        } else {
-            LOGI("Frame %d - not enough data", g_frameCount);
+        if (status == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
+            g_emptyBufferTicks++;
         }
+
+        if (g_emptyBufferTicks == 3) {
+            LOGI("🎯 STABLE SCENE DETECTED after %d frames!", g_frameCount);
+            notifyStableDetected(g_lastAnimation);
+        }
+
         AImage_delete(image);
     }
 

@@ -15,7 +15,7 @@
 JNIEnv* getJNIEnv();
 void notifyStableDetected(double lastMoveMs);
 int getVirtualDisplayFlagPublic(JNIEnv* env);
-
+double getElapsedRealtimeMs();
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved);
 
 #endif

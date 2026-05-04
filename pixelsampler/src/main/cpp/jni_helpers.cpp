@@ -1,5 +1,6 @@
 #include "jni_helpers.h"
 #include <android/log.h>
+#include <time.h>
 
 JavaVM* sJavaVM = nullptr;
 
@@ -100,6 +101,18 @@ int getVirtualDisplayFlagPublic(JNIEnv* env) {
         LOGI("VIRTUAL_DISPLAY_FLAG_PUBLIC = 0x%x", g_flagPublic);
     }
     return g_flagPublic;
+}
+
+// ===================================================================
+// Benchmark time count
+// ===================================================================
+
+// Get milliseconds as double (matching Kotlin)
+double getElapsedRealtimeMs() {
+    struct timespec ts;
+    clock_gettime(CLOCK_BOOTTIME, &ts);  // ← Consistent source
+    return static_cast<double>(ts.tv_sec) * 1000.0 +
+            static_cast<double>(ts.tv_nsec) / 1000000.0;
 }
 
 // ===================================================================

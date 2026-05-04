@@ -12,6 +12,7 @@ namespace choreographer {
 
     static void onFrameCallback(int64_t frameTimeNanos, void* /*data*/) {
         // ✅ Don't process if not running
+        LOGI("✅ Choreographer onFrameCallback entry");
         if (!g_isRunning.load()) {
             return;
         }
@@ -22,6 +23,7 @@ namespace choreographer {
         // ✅ Only re-post if still running
         if (g_isRunning.load() && g_choreographer) {
             AChoreographer_postFrameCallback64(g_choreographer, onFrameCallback, nullptr);
+            LOGI("✅ Choreographer onFrameCallback post");
         }
     }
 

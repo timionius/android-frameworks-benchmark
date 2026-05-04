@@ -130,9 +130,12 @@ namespace pixelsampler {
     // Frame Callback - Called from Choreographer
     // ===================================================================
     void onFrameCallback(int64_t /*frameTimeNanos*/) {
+        LOGI("Callback entered: isCapturing=%d, isStable=%d, reader=%p",
+                g_isCapturing, g_isStable.load(), g_imageReader);
         if (!g_isCapturing || g_isStable.load() || !g_imageReader) {
             return;
         }
+        LOGI("✅ pixel_sampler onFrameCallback entry");
 
         g_frameCount++;
 
@@ -141,6 +144,7 @@ namespace pixelsampler {
         media_status_t status = AImageReader_acquireLatestImage(g_imageReader, &image);
 
         if (status != AMEDIA_OK || !image) {
+            LOGI("✅ pixel_sampler status = %d", status);
             return;
         }
 
@@ -159,8 +163,7 @@ namespace pixelsampler {
                 if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
                     g_isStable.store(true);
                     LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
-                    auto now = std::chrono::steady_clock::now();
-                    double nowMs = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+                    double nowMs = getElapsedRealtimeMs();
                     notifyStableDetected(nowMs);
                 }
             } else {
@@ -172,8 +175,9 @@ namespace pixelsampler {
                     LOGI("Frame %d - Content changing", g_frameCount);
                 }
             }
+        } else {
+            LOGI("Frame %d - not enough data", g_frameCount);
         }
-
         AImage_delete(image);
     }
 

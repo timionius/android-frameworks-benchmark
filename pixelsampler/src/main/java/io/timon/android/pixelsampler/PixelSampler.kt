@@ -26,9 +26,8 @@ object PixelSampler {
     private var appStartTime: Double = 0.0
 
     init {
-
         appStartTime = currentTimeMillis()
-
+        markEvent(BenchmarkEvent.APP_START)
         try {
             System.loadLibrary("pixelsampler")
             Log.i(TAG, "✅ Native library loaded")
@@ -37,9 +36,7 @@ object PixelSampler {
         }
     }
 
-    fun init() {
-        markEvent(BenchmarkEvent.APP_START)
-    }
+    fun init() { /* left intentionally for managed launch at Application start */ }
 
     fun start(activity: ComponentActivity) {
         if (permissionLauncher != null) {

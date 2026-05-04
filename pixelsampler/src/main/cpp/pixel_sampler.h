@@ -1,13 +1,11 @@
 #pragma once
 
 #include <jni.h>
-#include <cstdint>
 
 namespace pixelsampler {
 
-    void setSurface(JNIEnv* env, jobject surface);
-    void startCapture();
-    void releaseCapture();
+    void startCapture(JNIEnv* env, jobject mediaProjection, jint width, jint height, jint dpi);
+    void stopCapture();
     void onFrameCallback(int64_t frameTimeNanos);
 
 }

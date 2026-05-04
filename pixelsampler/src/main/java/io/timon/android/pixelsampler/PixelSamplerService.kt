@@ -69,7 +69,7 @@ class PixelSamplerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        PixelSampler.release() // Clean up everything
+        PixelSampler.stop()
         Log.i(TAG, "PixelSamplerService destroyed")
     }
 }

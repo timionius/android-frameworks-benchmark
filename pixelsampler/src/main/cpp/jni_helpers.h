@@ -13,14 +13,9 @@
 
 // JNI helper functions
 JNIEnv* getJNIEnv();
-
-// Callback notification
 void notifyStableDetected();
+int getVirtualDisplayFlagPublic(JNIEnv* env);
 
-// Optional: Set instance manually if can't get from static method
-void setPixelSamplerInstance(JNIEnv* env, jobject instance);
-
-// JNI OnLoad declaration
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved);
 
 #endif

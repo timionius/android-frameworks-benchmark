@@ -3,10 +3,11 @@
 
 JavaVM* sJavaVM = nullptr;
 
-// Global references for callbacks
+// Global references
 static jclass g_pixelSamplerClass = nullptr;
 static jmethodID g_onNativeStableMethod = nullptr;
 static jobject g_pixelSamplerInstance = nullptr;
+static int g_flagPublic = -1;
 
 // ===================================================================
 // JNI Environment Helpers
@@ -66,6 +67,39 @@ void notifyStableDetected() {
         env->ExceptionDescribe();
         env->ExceptionClear();
     }
+}
+
+
+// ===================================================================
+// VIRTUAL_DISPLAY_FLAG_PUBLIC
+// ===================================================================
+
+// Helper to get flag values
+static int getDisplayManagerFlag(JNIEnv* env, const char* fieldName) {
+    jclass displayManagerClass = env->FindClass("android/hardware/display/DisplayManager");
+    if (!displayManagerClass) {
+        LOGE("Failed to find DisplayManager class");
+        return 0;
+    }
+
+    jfieldID fieldId = env->GetStaticFieldID(displayManagerClass, fieldName, "I");
+    if (!fieldId) {
+        LOGE("Failed to find field: %s", fieldName);
+        return 0;
+    }
+
+    int value = env->GetStaticIntField(displayManagerClass, fieldId);
+    env->DeleteLocalRef(displayManagerClass);
+
+    return value;
+}
+
+int getVirtualDisplayFlagPublic(JNIEnv* env) {
+    if (g_flagPublic == -1) {
+        g_flagPublic = getDisplayManagerFlag(env, "VIRTUAL_DISPLAY_FLAG_PUBLIC");
+        LOGI("VIRTUAL_DISPLAY_FLAG_PUBLIC = 0x%x", g_flagPublic);
+    }
+    return g_flagPublic;
 }
 
 // ===================================================================
@@ -142,6 +176,8 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         LOGE("JNI_OnLoad: Failed to create global reference for PixelSampler instance");
         return JNI_ERR;
     }
+
+    getVirtualDisplayFlagPublic(env);
 
     LOGI("✅ JNI_OnLoad completed successfully");
     LOGI("   - PixelSampler class registered");

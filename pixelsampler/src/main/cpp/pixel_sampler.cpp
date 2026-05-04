@@ -1,180 +1,334 @@
-#include "choreographer_callback.h"
-#include "jni_helpers.h"
 #include "pixel_sampler.h"
+#include "jni_helpers.h"
 
-#include <android/native_window.h>
+#include <media/NdkImageReader.h>
+#include <media/NdkImage.h>
 #include <android/native_window_jni.h>
 
 #include <atomic>
-#include <cstring>
 #include <vector>
+#include <cstring>
 
 namespace pixelsampler {
 
-    constexpr int SAMPLE_W = 100;
-    constexpr int SAMPLE_H = 100;
-    constexpr int SAMPLE_BYTES = SAMPLE_W * SAMPLE_H * 4;
+    constexpr int STABILITY_THRESHOLD = 6;
+    constexpr int CAPTURE_WIDTH = 100;
+    constexpr int CAPTURE_HEIGHT = 100;
+    constexpr int CAPTURE_DPI = 160;
 
-    static ANativeWindow* g_nativeWindow = nullptr;
+    // Global resources
+    static AImageReader* g_imageReader = nullptr;
+    static jobject g_virtualDisplay = nullptr;
 
-    static std::vector<uint8_t> g_prevPixels(SAMPLE_BYTES, 0);
+    // Add this static counter at the top of the file
+    static int g_imageCallbackCount = 0;
+
+    // Frame tracking
+    static std::vector<uint8_t> g_prevPixels;
     static std::atomic<int> g_stableCount{0};
     static std::atomic<bool> g_isStable{false};
     static int g_frameCount = 0;
+    static bool g_isCapturing = false;
 
-    static std::atomic<bool> g_isReleased{false};
-
-    static std::chrono::steady_clock::time_point g_lastFrameTime;
-    static constexpr int MIN_FRAME_INTERVAL_MS = 33; // ~30 fps max
+    // Forward declarations
+    void createVirtualDisplay(JNIEnv* env, jobject mediaProjection);
 
     // ===================================================================
-    // Set Surface - Called from Kotlin with Surface from ImageReader
+    // Start Capture - Called from JNI
     // ===================================================================
-    void setSurface(JNIEnv* env, jobject surface) {
-        // Release existing window if any
-        if (g_nativeWindow) {
-            ANativeWindow_release(g_nativeWindow);
-            g_nativeWindow = nullptr;
+    void startCapture(JNIEnv* env, jobject mediaProjection, jint width, jint height, jint dpi) {
+        if (g_isCapturing) {
+            LOGW("Already capturing");
+            return;
         }
 
-        if (surface) {
-            g_nativeWindow = ANativeWindow_fromSurface(env, surface);
-            if (g_nativeWindow) {
-                LOGI("✅ Surface set from Kotlin ImageReader");
-            } else {
-                LOGE("Failed to create ANativeWindow from Surface");
-            }
-        }
+        LOGI("Starting capture: %dx%d, dpi=%d", width, height, dpi);
 
-        g_isReleased.store(false);
+        // Initialize frame tracking
+        g_prevPixels.assign(width * height * 4, 0);
         g_stableCount.store(0);
+        g_isStable.store(false);
         g_frameCount = 0;
-        std::fill(g_prevPixels.begin(), g_prevPixels.end(), 0);
-    }
 
-    // ===================================================================
-    // Start Capture - Called from Kotlin after VirtualDisplay is ready
-    // ===================================================================
-    void startCapture() {
-        g_isReleased.store(false);
-        choreographer::start();
-        LOGI("✅ Choreographer started");
-    }
+        // Create VirtualDisplay and start capture
+        createVirtualDisplay(env, mediaProjection);
 
-    // ===================================================================
-    // Release Capture - Clean up all resources
-    // ===================================================================
-    void releaseCapture() {
-        g_isReleased.store(true);
-
-        // Stop choreographer to prevent new callbacks
-        choreographer::stop();
-
-        // Then release resources
-        if (g_nativeWindow) {
-            ANativeWindow_release(g_nativeWindow);
-            g_nativeWindow = nullptr;
+        if (g_imageReader) {
+            g_isCapturing = true;
+            LOGI("✅ Capture started successfully");
+        } else {
+            LOGE("Failed to start capture");
         }
-
-        LOGI("✅ Native capture released");
     }
 
+// ===================================================================
+// ImageReader Callback - Called when a new frame is available
+// ===================================================================
+    static void onImageAvailable(void* context, AImageReader* reader) {
+        g_imageCallbackCount++;
 
-    // ===================================================================
-    // Frame Callback - Called from Choreographer on every frame
-    // ===================================================================
-    void onFrameCallback(int64_t /*frameTimeNanos*/) {
-        if (g_isReleased.load()) {
+        LOGI("🔥🔥🔥 IMAGE AVAILABLE CALLBACK #%d TRIGGERED! 🔥🔥🔥", g_imageCallbackCount);
+
+        if (!g_isCapturing) {
+            LOGI("  Not capturing (g_isCapturing = false), skipping");
             return;
         }
 
-        if (!g_nativeWindow) {
-            static bool warned = false;
-            if (!warned) {
-                LOGE("No Surface available - call setSurface first");
-                warned = true;
+        if (g_isStable.load()) {
+            LOGI("  Already stable (g_isStable = true), skipping");
+            return;
+        }
+
+        if (!g_imageReader) {
+            LOGE("  g_imageReader is NULL!");
+            return;
+        }
+
+        AImage* image = nullptr;
+        media_status_t status = AImageReader_acquireLatestImage(reader, &image);
+
+        LOGI("  AImageReader_acquireLatestImage status: %d", status);
+
+        if (status != AMEDIA_OK) {
+            if (g_imageCallbackCount % 10 == 0) {
+                LOGW("  acquireLatestImage failed with status: %d", status);
             }
             return;
         }
 
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_lastFrameTime).count();
-
-        if (elapsed < MIN_FRAME_INTERVAL_MS) {
-            // Skip this frame, we're capturing too fast
+        if (!image) {
+            LOGE("  acquireLatestImage returned success but image is NULL!");
             return;
         }
-        g_lastFrameTime = now;
+
+        LOGI("✅✅✅ SUCCESS: IMAGE ACQUIRED at callback #%d! ✅✅✅", g_imageCallbackCount);
 
         g_frameCount++;
 
-        // Lock the ANativeWindow to access pixel buffer
-        ANativeWindow_Buffer buffer;
-        int result = ANativeWindow_lock(g_nativeWindow, &buffer, nullptr);
+        // Get pixel data
+        uint8_t* data = nullptr;
+        int32_t dataLength = 0;
+        int32_t pixelStride = 0;
+        int32_t rowStride = 0;
 
-        if (result == 0) {
-            if (buffer.bits) {
-                // Log occasionally
-                if (g_frameCount % 30 == 0) {
-                    LOGI("📸 Frame %d captured - size: %dx%d, stride: %d",
-                            g_frameCount, buffer.width, buffer.height, buffer.stride);
+        AImage_getPlaneData(image, 0, &data, &dataLength);
+        AImage_getPlanePixelStride(image, 0, &pixelStride);
+        AImage_getPlaneRowStride(image, 0, &rowStride);
 
-                    // Print first few pixels to verify content
-                    uint8_t* pixels = static_cast<uint8_t*>(buffer.bits);
-                    LOGI("First 16 bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
-                            pixels[0], pixels[1], pixels[2], pixels[3],
-                            pixels[4], pixels[5], pixels[6], pixels[7]);
-                }
+        LOGI("  Image info: data=%p, len=%d, pixelStride=%d, rowStride=%d",
+                data, dataLength, pixelStride, rowStride);
 
-                // Check for stability (compare first SAMPLE_BYTES)
-                uint8_t* currentPixels = static_cast<uint8_t*>(buffer.bits);
-                if (std::memcmp(currentPixels, g_prevPixels.data(), SAMPLE_BYTES) == 0) {
-                    int stableCount = g_stableCount.fetch_add(1) + 1;
-                    if (stableCount == 6 && !g_isStable.load()) {
-                        g_isStable.store(true);
-                        LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
-                        notifyStableDetected();
-                    }
-                } else {
-                    std::memcpy(g_prevPixels.data(), currentPixels, SAMPLE_BYTES);
-                    g_stableCount.store(1);
-
-                    if (g_isStable.load()) {
-                        g_isStable.store(false);
-                        LOGI("🔄 Render changed at frame %d", g_frameCount);
-                    }
+        if (data && dataLength >= CAPTURE_WIDTH * CAPTURE_HEIGHT * 4 && pixelStride == 4) {
+            // Calculate non-black pixels
+            int nonBlackCount = 0;
+            for (int i = 0; i < CAPTURE_WIDTH * CAPTURE_HEIGHT * 4; i += 4) {
+                if (data[i] > 0 || data[i+1] > 0 || data[i+2] > 0) {
+                    nonBlackCount++;
                 }
             }
-            ANativeWindow_unlockAndPost(g_nativeWindow);
+
+            int percentNonBlack = (nonBlackCount * 100) / (CAPTURE_WIDTH * CAPTURE_HEIGHT);
+
+            LOGI("  Frame %d - Non-black: %d/%d (%d%%), Avg RGB: (%d,%d,%d)",
+                    g_frameCount, nonBlackCount, CAPTURE_WIDTH * CAPTURE_HEIGHT, percentNonBlack,
+                    (int)data[0], (int)data[1], (int)data[2]);
+
+            // Check stability
+            bool isStable = (std::memcmp(data, g_prevPixels.data(), dataLength) == 0);
+
+            if (isStable) {
+                int stableCount = g_stableCount.fetch_add(1) + 1;
+                LOGI("  Stable count: %d / %d", stableCount, STABILITY_THRESHOLD);
+
+                if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
+                    g_isStable.store(true);
+                    LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
+                    LOGI("   Final non-black: %d%%", percentNonBlack);
+                    notifyStableDetected();
+                }
+            } else {
+                std::memcpy(g_prevPixels.data(), data, dataLength);
+                g_stableCount.store(1);
+                LOGI("  Frame changed - resetting stable count");
+            }
         } else {
-            if (g_frameCount % 60 == 0) {
-                LOGD("Failed to lock ANativeWindow (frame %d)", g_frameCount);
+            LOGW("  Invalid pixel data: data=%p, len=%d, expected=%d, pixelStride=%d",
+                    data, dataLength, CAPTURE_WIDTH * CAPTURE_HEIGHT * 4, pixelStride);
+        }
+
+        AImage_delete(image);
+        LOGI("  Image deleted");
+    }
+
+    // ===================================================================
+    // Create VirtualDisplay using stored MediaProjection
+    // ===================================================================
+    void createVirtualDisplay(JNIEnv* env, jobject mediaProjection) {
+        // 1. Create AImageReader
+        media_status_t status = AImageReader_new(
+                CAPTURE_WIDTH, CAPTURE_HEIGHT,
+                AIMAGE_FORMAT_RGBA_8888, 4,
+                &g_imageReader);
+
+        if (status != AMEDIA_OK || !g_imageReader) {
+            LOGE("Failed to create AImageReader: %d", status);
+            return;
+        }
+
+        LOGI("✅ AImageReader created: %dx%d", CAPTURE_WIDTH, CAPTURE_HEIGHT);
+
+        AImageReader_ImageListener listener;
+        listener.context = nullptr;
+        listener.onImageAvailable = onImageAvailable;
+        AImageReader_setImageListener(g_imageReader, &listener);
+        LOGI("✅ ImageReader callback SET - onImageAvailable = %p", listener.onImageAvailable);
+
+        // Get the ANativeWindow from AImageReader
+        ANativeWindow* nativeWindow = nullptr;
+        AImageReader_getWindow(g_imageReader, &nativeWindow);
+        jobject surfaceObj = ANativeWindow_toSurface(env, nativeWindow);
+
+        if (!nativeWindow) {
+            LOGE("Failed to get ANativeWindow from AImageReader");
+            return;
+        }
+
+        LOGI("✅ Got ANativeWindow: %p", nativeWindow);
+
+        // 3. Create VirtualDisplay using MediaProjection
+        jclass mediaProjectionClass = env->GetObjectClass(mediaProjection);
+        jmethodID createVirtualDisplay = env->GetMethodID(
+                mediaProjectionClass,
+                "createVirtualDisplay",
+                "(Ljava/lang/String;IIIILandroid/view/Surface;Landroid/hardware/display/VirtualDisplay$Callback;Landroid/os/Handler;)Landroid/hardware/display/VirtualDisplay;");
+
+        int publicFlag = getVirtualDisplayFlagPublic(env);
+
+        jstring name = env->NewStringUTF("PixelSampler");
+        jobject virtualDisplay = env->CallObjectMethod(
+                mediaProjection, //g_mediaProjection,
+                createVirtualDisplay,
+                name,
+                CAPTURE_WIDTH, CAPTURE_HEIGHT, CAPTURE_DPI,
+                publicFlag,
+                surfaceObj,
+                nullptr,
+                nullptr
+        );
+
+        env->DeleteLocalRef(name);
+        env->DeleteLocalRef(surfaceObj);
+        if (virtualDisplay) {
+            g_virtualDisplay = env->NewGlobalRef(virtualDisplay);
+            env->DeleteLocalRef(virtualDisplay);
+            LOGI("✅ VirtualDisplay created successfully");
+        } else {
+            LOGE("Failed to create VirtualDisplay");
+        }
+    }
+
+    // ===================================================================
+    // Frame Callback - Called from Choreographer
+    // ===================================================================
+    void onFrameCallback(int64_t /*frameTimeNanos*/) {
+        if (!g_isCapturing || g_isStable.load() || !g_imageReader) {
+            return;
+        }
+
+        g_frameCount++;
+
+        // Acquire latest image
+        AImage* image = nullptr;
+        media_status_t status = AImageReader_acquireLatestImage(g_imageReader, &image);
+
+        if (status != AMEDIA_OK || !image) {
+            return;
+        }
+
+        // Get pixel data
+        uint8_t* data = nullptr;
+        int32_t dataLength = 0;
+        AImage_getPlaneData(image, 0, &data, &dataLength);
+
+        if (data && dataLength >= CAPTURE_WIDTH * CAPTURE_HEIGHT * 4) {
+            // Check stability by comparing with previous frame
+            bool isStable = (std::memcmp(data, g_prevPixels.data(), dataLength) == 0);
+
+            if (isStable) {
+                int stableCount = g_stableCount.fetch_add(1) + 1;
+
+                if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
+                    g_isStable.store(true);
+                    LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
+                    notifyStableDetected();
+                }
+            } else {
+                // Frame changed - reset
+                std::memcpy(g_prevPixels.data(), data, dataLength);
+                g_stableCount.store(1);
+
+                if (g_frameCount % 30 == 0) {
+                    LOGI("Frame %d - Content changing", g_frameCount);
+                }
             }
         }
+
+        AImage_delete(image);
+    }
+
+    // ===================================================================
+    // Stop Capture - Called from JNI
+    // ===================================================================
+    void stopCapture() {
+        if (!g_isCapturing) {
+            return;
+        }
+
+        LOGI("Stopping capture...");
+
+        g_isCapturing = false;
+        g_isStable.store(true);
+
+        // Clean up resources
+        JNIEnv* env = getJNIEnv();
+
+        if (env && g_virtualDisplay) {
+            jclass displayClass = env->GetObjectClass(g_virtualDisplay);
+            jmethodID releaseMethod = env->GetMethodID(displayClass, "release", "()V");
+            if (releaseMethod) {
+                env->CallVoidMethod(g_virtualDisplay, releaseMethod);
+            }
+            env->DeleteGlobalRef(g_virtualDisplay);
+            g_virtualDisplay = nullptr;
+        }
+
+        if (g_imageReader) {
+            AImageReader_delete(g_imageReader);
+            g_imageReader = nullptr;
+        }
+
+        LOGI("✅ Capture stopped");
     }
 
 } // namespace pixelsampler
 
-// ==================== JNI Bridge ====================
+// ===================================================================
+// JNI Entry Points
+// ===================================================================
+// pixel_sampler.cpp - Only these JNI methods
 
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_io_timon_android_pixelsampler_PixelSampler_nativeSetSurface(
-        JNIEnv* env, jobject thiz, jobject surface) {
-    pixelsampler::setSurface(env, surface);
+Java_io_timon_android_pixelsampler_PixelSampler_nativeInitCapture(
+        JNIEnv* env, jobject thiz, jobject mediaProjection, jint width, jint height, jint dpi) {
+    pixelsampler::startCapture(env, mediaProjection, width, height, dpi);
 }
 
 JNIEXPORT void JNICALL
-Java_io_timon_android_pixelsampler_PixelSampler_nativeStartCapture(
+Java_io_timon_android_pixelsampler_PixelSampler_nativeReleaseCapture(
         JNIEnv* env, jobject thiz) {
-    pixelsampler::startCapture();
-}
-
-JNIEXPORT void JNICALL
-Java_io_timon_android_pixelsampler_PixelSampler_nativeRelease(
-        JNIEnv* env, jobject thiz) {
-    pixelsampler::releaseCapture();
+    pixelsampler::stopCapture();
 }
 
 }

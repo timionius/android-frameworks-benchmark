@@ -1,12 +1,8 @@
 package io.timon.benchmark.compose
 
-import android.content.Context
-import android.media.projection.MediaProjectionManager
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -22,17 +18,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.lifecycleScope
 import io.timon.android.pixelsampler.PixelSampler
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Start sampler immediately (no callback needed anymore)
         PixelSampler.start(this)
 
         setContent {
@@ -41,7 +33,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        PixelSampler.release()
+        PixelSampler.stop()
         super.onDestroy()
     }
 }

@@ -11,6 +11,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 add_library(pixelsampler SHARED
         pixel_sampler.cpp
+        choreographer_callback.cpp
         jni_helpers.cpp
 )
 

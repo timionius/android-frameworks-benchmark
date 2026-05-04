@@ -41,7 +41,7 @@ JavaVM* getJavaVM() {
 // Callback Notification
 // ===================================================================
 
-void notifyStableDetected() {
+void notifyStableDetected(double lastMoveMs) {
     JNIEnv* env = getJNIEnv();
 
     if (!env) {
@@ -59,7 +59,7 @@ void notifyStableDetected() {
         return;
     }
 
-    env->CallVoidMethod(g_pixelSamplerInstance, g_onNativeStableMethod);
+    env->CallVoidMethod(g_pixelSamplerInstance, g_onNativeStableMethod, lastMoveMs);
 
     // Check for exceptions
     if (env->ExceptionCheck()) {
@@ -140,7 +140,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onNativeStableMethod = env->GetMethodID(
             g_pixelSamplerClass,
             "onNativeStable",
-            "()V"
+            "(D)V"
     );
 
     if (!g_onNativeStableMethod) {

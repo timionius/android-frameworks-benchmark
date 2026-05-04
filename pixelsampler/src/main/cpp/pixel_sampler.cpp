@@ -1,3 +1,4 @@
+#include "choreographer_callback.h"
 #include "pixel_sampler.h"
 #include "jni_helpers.h"
 
@@ -11,7 +12,7 @@
 
 namespace pixelsampler {
 
-    constexpr int STABILITY_THRESHOLD = 6;
+    constexpr int STABILITY_THRESHOLD = 2;
     constexpr int CAPTURE_WIDTH = 100;
     constexpr int CAPTURE_HEIGHT = 100;
     constexpr int CAPTURE_DPI = 160;
@@ -41,6 +42,9 @@ namespace pixelsampler {
             LOGW("Already capturing");
             return;
         }
+
+        choreographer::start();
+        LOGI("✅ Choreographer started");
 
         LOGI("Starting capture: %dx%d, dpi=%d", width, height, dpi);
 
@@ -144,7 +148,9 @@ namespace pixelsampler {
                     g_isStable.store(true);
                     LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
                     LOGI("   Final non-black: %d%%", percentNonBlack);
-                    notifyStableDetected();
+                    auto now = std::chrono::steady_clock::now();
+                    double nowMs = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+                    notifyStableDetected(nowMs);
                 }
             } else {
                 std::memcpy(g_prevPixels.data(), data, dataLength);
@@ -177,11 +183,11 @@ namespace pixelsampler {
 
         LOGI("✅ AImageReader created: %dx%d", CAPTURE_WIDTH, CAPTURE_HEIGHT);
 
-        AImageReader_ImageListener listener;
-        listener.context = nullptr;
-        listener.onImageAvailable = onImageAvailable;
-        AImageReader_setImageListener(g_imageReader, &listener);
-        LOGI("✅ ImageReader callback SET - onImageAvailable = %p", listener.onImageAvailable);
+//        AImageReader_ImageListener listener;
+//        listener.context = nullptr;
+//        listener.onImageAvailable = onImageAvailable;
+//        AImageReader_setImageListener(g_imageReader, &listener);
+//        LOGI("✅ ImageReader callback SET - onImageAvailable = %p", listener.onImageAvailable);
 
         // Get the ANativeWindow from AImageReader
         ANativeWindow* nativeWindow = nullptr;
@@ -260,7 +266,9 @@ namespace pixelsampler {
                 if (stableCount >= STABILITY_THRESHOLD && !g_isStable.load()) {
                     g_isStable.store(true);
                     LOGI("🎯 STABLE RENDER DETECTED after %d frames!", g_frameCount);
-                    notifyStableDetected();
+                    auto now = std::chrono::steady_clock::now();
+                    double nowMs = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+                    notifyStableDetected(nowMs);
                 }
             } else {
                 // Frame changed - reset
@@ -284,6 +292,8 @@ namespace pixelsampler {
             return;
         }
 
+        // Stop choreographer to prevent new callbacks
+        choreographer::stop();
         LOGI("Stopping capture...");
 
         g_isCapturing = false;

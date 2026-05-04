@@ -13,7 +13,7 @@
 
 // JNI helper functions
 JNIEnv* getJNIEnv();
-void notifyStableDetected();
+void notifyStableDetected(double lastMoveMs);
 int getVirtualDisplayFlagPublic(JNIEnv* env);
 
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved);

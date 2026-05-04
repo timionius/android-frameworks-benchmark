@@ -5,19 +5,36 @@ plugins {
 
 android {
     namespace = "io.timon.android.pixelsampler"
-    compileSdk = libs.versions.compileSdk.get().toInt()
+    compileSdk =
+        libs.versions.compileSdk
+            .get()
+            .toInt()
+
+    ndkVersion =
+        libs.versions.ndkVersion
+            .get()
+
+    val sdkPath: String? = System.getenv("ANDROID_HOME")
+    val osName = System.getProperty("os.name").lowercase()
+    val hostTag = if (osName.contains("mac")) "darwin-x86_64" else "linux-x86_64"
+    val clangTidyPath = "$sdkPath/ndk/$ndkVersion/toolchains/llvm/prebuilt/$hostTag/bin/clang-tidy"
 
     defaultConfig {
-        minSdk = libs.versions.minSdk.get().toInt()
+        minSdk =
+            libs.versions.minSdk
+                .get()
+                .toInt()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         externalNativeBuild {
             cmake {
-                arguments += listOf(
-                    "-DANDROID_STL=c++_shared",
-                    "-DANDROID_ARM_NEON=TRUE",
-                )
+                arguments +=
+                    listOf(
+                        "-DANDROID_STL=c++_shared",
+                        "-DANDROID_ARM_NEON=TRUE",
+                        "-DCMAKE_CXX_CLANG_TIDY=$clangTidyPath;-checks=-*,bugprone-*,modernize-*,performance-*,readability-*",
+                    )
                 cppFlags += "-std=c++17"
             }
         }
@@ -32,7 +49,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
 
             externalNativeBuild {
@@ -80,7 +97,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.espresso)
 }
 // ====================== Publishing (optional) ======================
-//publishing {
+// publishing {
 //    publications {
 //        register<MavenPublication>("release") {
 //            groupId = "io.timon.android"
@@ -92,4 +109,4 @@ dependencies {
 //            }
 //        }
 //    }
-//}
+// }

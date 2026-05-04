@@ -1,0 +1,18 @@
+Checks: >
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length
+  -*,misc-include-cleaner
+
+# Treat warnings as errors to fail the CI/Build
+WarningsAsErrors: 'bugprone-*,performance-*'
+
+# Specific formatting for Clang-Tidy
+CheckOptions:
+  - key:             readability-function-size.LineThreshold
+    value:           '100'
+---
+

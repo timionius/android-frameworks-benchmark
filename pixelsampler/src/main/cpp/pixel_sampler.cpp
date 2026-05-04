@@ -7,6 +7,7 @@
 #include <android/native_window_jni.h>
 
 #include <atomic>
+#include <cstddef>
 #include <vector>
 #include <cstring>
 
@@ -47,7 +48,7 @@ namespace pixelsampler {
         LOGI("Starting capture: %dx%d, dpi=%d", width, height, dpi);
 
         // Initialize frame tracking
-        g_prevPixels.assign(width * height * 4, 0);
+        g_prevPixels.assign(static_cast<size_t>(width) * height * 4, 0);
         g_stableCount.store(0);
         g_isStable.store(false);
         g_frameCount = 0;
@@ -57,7 +58,7 @@ namespace pixelsampler {
         // Create VirtualDisplay and start capture
         createVirtualDisplay(env, mediaProjection);
 
-        if (g_imageReader) {
+        if (g_imageReader != nullptr) {
             g_isCapturing = true;
             LOGI("✅ Capture started successfully");
         } else {
@@ -75,7 +76,7 @@ namespace pixelsampler {
                 AIMAGE_FORMAT_RGBA_8888, 4,
                 &g_imageReader);
 
-        if (status != AMEDIA_OK || !g_imageReader) {
+        if (status != AMEDIA_OK || (g_imageReader == nullptr)) {
             LOGE("Failed to create AImageReader: %d", status);
             return;
         }
@@ -87,7 +88,7 @@ namespace pixelsampler {
         AImageReader_getWindow(g_imageReader, &nativeWindow);
         jobject surfaceObj = ANativeWindow_toSurface(env, nativeWindow);
 
-        if (!nativeWindow) {
+        if (nativeWindow == nullptr) {
             LOGE("Failed to get ANativeWindow from AImageReader");
             return;
         }
@@ -117,7 +118,7 @@ namespace pixelsampler {
 
         env->DeleteLocalRef(name);
         env->DeleteLocalRef(surfaceObj);
-        if (virtualDisplay) {
+        if (virtualDisplay != nullptr) {
             g_virtualDisplay = env->NewGlobalRef(virtualDisplay);
             env->DeleteLocalRef(virtualDisplay);
             LOGI("✅ VirtualDisplay created successfully");
@@ -132,7 +133,7 @@ namespace pixelsampler {
     void onFrameCallback(int64_t /*frameTimeNanos*/) {
         LOGI("Callback entered: isCapturing=%d, isStable=%d, reader=%p",
                 g_isCapturing, g_isStable.load(), g_imageReader);
-        if (!g_isCapturing || g_isStable.load() || !g_imageReader) {
+        if (!g_isCapturing || g_isStable.load() || (g_imageReader == nullptr)) {
             return;
         }
         LOGI("✅ pixel_sampler onFrameCallback entry");
@@ -179,17 +180,17 @@ namespace pixelsampler {
         // Clean up resources
         JNIEnv* env = getJNIEnv();
 
-        if (env && g_virtualDisplay) {
+        if ((env != nullptr) && (g_virtualDisplay != nullptr)) {
             jclass displayClass = env->GetObjectClass(g_virtualDisplay);
             jmethodID releaseMethod = env->GetMethodID(displayClass, "release", "()V");
-            if (releaseMethod) {
+            if (releaseMethod != nullptr) {
                 env->CallVoidMethod(g_virtualDisplay, releaseMethod);
             }
             env->DeleteGlobalRef(g_virtualDisplay);
             g_virtualDisplay = nullptr;
         }
 
-        if (g_imageReader) {
+        if (g_imageReader != nullptr) {
             AImageReader_delete(g_imageReader);
             g_imageReader = nullptr;
         }
@@ -208,13 +209,21 @@ extern "C" {
 
 JNIEXPORT void JNICALL
 Java_io_timon_android_pixelsampler_PixelSampler_nativeInitCapture(
-        JNIEnv* env, jobject thiz, jobject mediaProjection, jint width, jint height, jint dpi) {
+        JNIEnv* env,
+        jobject thiz, // NOLINT(bugprone-easily-swappable-parameters)
+        jobject mediaProjection,
+        jint width,
+        jint height,
+        jint dpi
+) {
     pixelsampler::startCapture(env, mediaProjection, width, height, dpi);
 }
 
 JNIEXPORT void JNICALL
 Java_io_timon_android_pixelsampler_PixelSampler_nativeReleaseCapture(
-        JNIEnv* env, jobject thiz) {
+        JNIEnv* env, // NOLINT(bugprone-easily-swappable-parameters)
+        jobject thiz
+) {
     pixelsampler::stopCapture();
 }
 

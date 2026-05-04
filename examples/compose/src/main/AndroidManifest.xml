@@ -26,13 +26,6 @@
             </intent-filter>
 
         </activity>
-
-        <service
-            android:name="io.timon.android.pixelsampler.PixelSamplerService"
-            android:foregroundServiceType="mediaProjection"
-            android:enabled="true"
-            android:exported="false" />
-
     </application>
 
 </manifest>

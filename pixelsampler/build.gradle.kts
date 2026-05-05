@@ -85,6 +85,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
 }
 
 dependencies {
@@ -96,17 +103,3 @@ dependencies {
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
 }
-// ====================== Publishing (optional) ======================
-// publishing {
-//    publications {
-//        register<MavenPublication>("release") {
-//            groupId = "io.timon.android"
-//            artifactId = "pixelsampler"
-//            version = "1.0.0"
-//
-//            afterEvaluate {
-//                from(components["release"])
-//            }
-//        }
-//    }
-// }

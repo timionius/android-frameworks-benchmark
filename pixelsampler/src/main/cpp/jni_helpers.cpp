@@ -7,7 +7,6 @@ JavaVM* sJavaVM = nullptr;
 // Global references
 static jclass g_pixelSamplerClass = nullptr;
 static jmethodID g_onNativeStableMethod = nullptr;
-static jobject g_pixelSamplerInstance = nullptr;
 static int g_flagPublic = -1;
 
 // ===================================================================
@@ -50,17 +49,14 @@ void notifyStableDetected(double lastMoveMs) {
         return;
     }
 
-    if (!g_pixelSamplerInstance) {
-        LOGE("notifyStableDetected: PixelSampler instance is null");
-        return;
-    }
-
     if (!g_onNativeStableMethod) {
         LOGE("notifyStableDetected: onNativeStable method ID is null");
         return;
     }
 
-    env->CallVoidMethod(g_pixelSamplerInstance, g_onNativeStableMethod, lastMoveMs);
+    if (env != nullptr && g_pixelSamplerClass != nullptr && g_onNativeStableMethod != nullptr) {
+        env->CallStaticVoidMethod(g_pixelSamplerClass, g_onNativeStableMethod, lastMoveMs);
+    }
 
     // Check for exceptions
     if (env->ExceptionCheck()) {
@@ -150,7 +146,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     // ===================================================================
     // 2. Get the onNativeStable method ID
     // ===================================================================
-    g_onNativeStableMethod = env->GetMethodID(
+    g_onNativeStableMethod = env->GetStaticMethodID(
             g_pixelSamplerClass,
             "onNativeStable",
             "(D)V"
@@ -161,41 +157,11 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         return JNI_ERR;
     }
 
-    // ===================================================================
-    // 3. Get the singleton instance via INSTANCE field (Kotlin object)
-    // ===================================================================
-    jfieldID instanceField = env->GetStaticFieldID(
-            g_pixelSamplerClass,
-            "INSTANCE",
-            "Lio/timon/android/pixelsampler/PixelSampler;"
-    );
-
-    if (!instanceField) {
-        LOGE("JNI_OnLoad: Failed to find INSTANCE field");
-        return JNI_ERR;
-    }
-
-    jobject instance = env->GetStaticObjectField(g_pixelSamplerClass, instanceField);
-    if (!instance) {
-        LOGE("JNI_OnLoad: INSTANCE field is null");
-        return JNI_ERR;
-    }
-
-    // Store global reference to the instance
-    g_pixelSamplerInstance = env->NewGlobalRef(instance);
-    env->DeleteLocalRef(instance);
-
-    if (!g_pixelSamplerInstance) {
-        LOGE("JNI_OnLoad: Failed to create global reference for PixelSampler instance");
-        return JNI_ERR;
-    }
-
     getVirtualDisplayFlagPublic(env);
 
     LOGI("✅ JNI_OnLoad completed successfully");
     LOGI("   - PixelSampler class registered");
     LOGI("   - onNativeStable method cached");
-    LOGI("   - PixelSampler instance obtained");
 
     return JNI_VERSION_1_6;
 }
@@ -216,15 +182,9 @@ void JNI_OnUnload(JavaVM* vm, void* reserved) {
             LOGD("Deleted global reference for PixelSampler class");
         }
 
-        if (g_pixelSamplerInstance) {
-            env->DeleteGlobalRef(g_pixelSamplerInstance);
-            g_pixelSamplerInstance = nullptr;
-            LOGD("Deleted global reference for PixelSampler instance");
-        }
     } else {
         // If we can't get JNIEnv, just null out the pointers
         g_pixelSamplerClass = nullptr;
-        g_pixelSamplerInstance = nullptr;
         LOGW("JNI_OnUnload: Could not get JNIEnv, skipping DeleteGlobalRef");
     }
 

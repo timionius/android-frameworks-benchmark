@@ -7,6 +7,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.Keep
 import java.lang.ref.WeakReference
 
 enum class BenchmarkEvent {
@@ -122,8 +123,10 @@ object PixelSampler {
         mediaProjection = null
     }
 
+    @Keep
+    @JvmStatic
     @Suppress("unused")
-    private fun onNativeStable(lastMoveMs: Double) {
+    fun onNativeStable(lastMoveMs: Double) {
         val relativeMs = lastMoveMs - appStartTime
         Log.i(TAG, "🎯 STABLE RENDER DETECTED")
         Log.i(TAG, "✅ [BENCHMARK] Total time: ${String.format("%.3f", relativeMs)}ms")

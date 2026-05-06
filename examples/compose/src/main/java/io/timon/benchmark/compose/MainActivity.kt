@@ -1,5 +1,6 @@
 package io.timon.benchmark.compose
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +45,11 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         PixelSampler.stop()
         super.onDestroy()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        PixelSampler.onActivityResult(requestCode, resultCode, data)
     }
 }
 

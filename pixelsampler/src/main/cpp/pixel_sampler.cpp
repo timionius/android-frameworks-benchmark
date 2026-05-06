@@ -150,12 +150,12 @@ namespace pixelsampler {
             g_emptyBufferTicks = 0;
         }
 
-        if (status == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
+        if (status == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE && g_lastAnimation > 0.0) {
             g_emptyBufferTicks++;
         }
 
         if (g_emptyBufferTicks == 3) {
-            LOGI("🎯 STABLE SCENE DETECTED after %d frames!", g_frameCount);
+            LOGI("🎯 STABLE SCENE DETECTED after %d frames at %f!", g_frameCount, g_lastAnimation);
             notifyStableDetected(g_lastAnimation);
         }
 

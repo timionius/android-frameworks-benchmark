@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.Keep
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class BenchmarkEvent {
     APP_START,
@@ -21,6 +22,8 @@ private const val REQUEST_CODE_SCREEN_CAPTURE = 1001
 
 object PixelSampler {
     private var appStartTime: Double = 0.0
+    private val isBenchmarkStarted = AtomicBoolean(false)
+    private val isBenchmarkCompleted = AtomicBoolean(false)
     private var currentActivityRef: WeakReference<Activity>? = null
     private var mediaProjection: MediaProjection? = null
     private var pendingPermissionCallback: ((resultCode: Int, data: Intent?) -> Unit)? = null
@@ -43,6 +46,18 @@ object PixelSampler {
      * (FlutterActivity, ComponentActivity, ReactActivity, etc.)
      */
     fun start(activity: Activity) {
+        if (isBenchmarkCompleted.get()) {
+            Log.d(TAG, "Benchmark already completed, ignoring")
+            return
+        }
+
+        markEvent(BenchmarkEvent.FRAMEWORK_ENTRY)
+
+        if (!isBenchmarkStarted.compareAndSet(false, true)) {
+            Log.d(TAG, "Benchmark already starting/started, ignoring duplicate")
+            return
+        }
+
         if (pendingPermissionCallback != null) {
             Log.w(TAG, "Already started")
             return
@@ -114,6 +129,7 @@ object PixelSampler {
 
     fun stop() {
         nativeReleaseCapture()
+        stopForegroundService()
         cleanup()
     }
 
@@ -127,6 +143,11 @@ object PixelSampler {
     @JvmStatic
     @Suppress("unused")
     fun onNativeStable(lastMoveMs: Double) {
+        if (!isBenchmarkCompleted.compareAndSet(false, true)) {
+            Log.d(TAG, "Benchmark already completed, ignoring duplicate stable event")
+            return
+        }
+
         val relativeMs = lastMoveMs - appStartTime
         Log.i(TAG, "🎯 STABLE RENDER DETECTED")
         Log.i(TAG, "✅ [BENCHMARK] Total time: ${String.format("%.3f", relativeMs)}ms")
@@ -140,6 +161,18 @@ object PixelSampler {
     }
 
     private fun currentTimeMillis(): Double = SystemClock.elapsedRealtimeNanos() / 1_000_000.0
+
+    private fun stopForegroundService() {
+        val activity =
+            currentActivityRef?.get() ?: run {
+                Log.e(TAG, "Activity reference lost")
+                cleanup()
+                return
+            }
+        val serviceIntent = Intent(activity, PixelSamplerService::class.java)
+        activity.stopService(serviceIntent)
+        Log.d(TAG, "✅ Foreground service stopped")
+    }
 
     private external fun nativeInitCapture(
         mediaProjection: MediaProjection,

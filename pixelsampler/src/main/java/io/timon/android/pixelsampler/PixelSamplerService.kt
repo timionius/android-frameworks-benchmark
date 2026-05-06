@@ -59,7 +59,7 @@ class PixelSamplerService : Service() {
         intent: Intent?,
         flags: Int,
         startId: Int,
-    ): Int = START_STICKY
+    ): Int = START_NOT_STICKY
 
     override fun onBind(intent: Intent?): IBinder? = null
 

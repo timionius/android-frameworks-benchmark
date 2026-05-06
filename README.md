@@ -1,9 +1,9 @@
 # 🚀 PixelSampler SDK (Android)
----
+
 PixelSampler SDK is a lightweight, low-overhead performance monitoring tool for Android. It captures the true visual app-start time by monitoring the screen's frame production pipeline. The SDK supports Jetpack Compose, XML Views, React Native, and Flutter.
 
 # 📱 Device Compatibility & Testing
----
+
 ⚠️ **Important Note**: This SDK has been tested on Redmi Note 8 Pro. Other devices may exhibit different behavior due to variations in:
 
 - VirtualDisplay implementation
@@ -11,7 +11,7 @@ PixelSampler SDK is a lightweight, low-overhead performance monitoring tool for 
 - Android vendor modifications
 
 # ✨ Key Features
----
+
 - 🔌 Simple Integration: Minimal setup — just initialize, start, and receive results
 - ⚡ Ultra-Low Overhead: Native C++ processing with Choreographer vsync callbacks
 - 🎯 Frame Pipeline Monitoring: Detects stability when the VirtualDisplay stops producing frames (3 consecutive empty buffers)
@@ -20,11 +20,11 @@ PixelSampler SDK is a lightweight, low-overhead performance monitoring tool for 
 - 🛡️ Permission Management: Handles MediaProjection permission with foreground service (required for Android 14+)
 
 # 📦 Installation
----
+
 TBD
 
 # 🛠 Integration
----
+
 ## 1. Initialize SDK
 The SDK auto-initializes when the PixelSampler object is first accessed. APP_START is logged immediately and native library is loaded. The best place is Activity init block
 ```kotlin
@@ -68,7 +68,7 @@ adb shell cmd appops set your.package.name PROJECT_MEDIA allow
 adb shell am start -n your.package.name/.MainActivity
 ```
 # 🔍 How It Works
----
+
 1. T=0: APP_START captured when PixelSampler object is first accessed (monotonic clock via SystemClock.elapsedRealtimeNanos()).
 2. Permission Request: When start() is called, the SDK:
    - Starts a foreground service (required for Android 14+)
@@ -87,15 +87,15 @@ adb shell am start -n your.package.name/.MainActivity
 5. Result: RENDER_COMPLETE logged with total elapsed time.
 
 # 🔧 Requirements
----
-- Android 12.0 (API 29) or higher (API 24+ support but not tested)
+
+- Android 12.0 (API 29), API 24+ supported but not tested
 - Kotlin 1.9+
 - Android Gradle Plugin 9.5+
 - NDK 28.2.13676358
 - CMake 3.22+
 
 # Build Requirements
----
+
 ⚠️ **Important Note**: This SDK has been built and tested in **macOS** environment only.
 Windows and Linux builds may require additional configuration.
 
@@ -105,7 +105,7 @@ export ANDROID_HOME=/Users/$USER/Library/Android/sdk
 ```
 
 # 📝 License
----
+
 MIT License
 
 Copyright (c) 2026 Dmitrii Nikishov

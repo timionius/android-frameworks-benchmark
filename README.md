@@ -76,7 +76,7 @@ adb shell am start -n your.package.name/.MainActivity
    - Once granted, calls native code
 3. Native Frame Pipeline (C++):
    - Creates AImageReader (100x100, RGBA_8888)
-   - Creates VirtualDisplay with AUTO_MIRROR flag
+   - Creates VirtualDisplay
    - Registers Choreographer callback for vsync synchronization
    - Each frame: attempts to acquire latest image from AImageReader
 4. Stability Detection:
@@ -89,7 +89,7 @@ adb shell am start -n your.package.name/.MainActivity
 # 🔧 Requirements
 
 - Android 12.0 (API 29), API 24+ supported but not tested
-- Kotlin 1.9+
+- Kotlin 2.1.0
 - Android Gradle Plugin 9.5+
 - NDK 28.2.13676358
 - CMake 3.22+
